@@ -1,0 +1,14 @@
+{
+  "roots": [
+    "lamda_square"
+  ],
+  "packages": [
+    {
+      "name": "lamda_square",
+      "version": "1.0.0",
+      "dependencies": [],
+      "devDependencies": []
+    }
+  ],
+  "configVersion": 1
+}
