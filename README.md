@@ -1,418 +1,300 @@
-# Page-By-Page Testing Report
+# Comprehensive Testing Report
 
 Date: March 25, 2026
 Project: RenewBerry
 Test location: `src/test`
-Primary suite: `src/test/appRouterPages.test.ts`
 
 ## Summary
 
-This report documents the routed page-by-page smoke testing pass for RenewBerry.
-
-Scope of this pass:
-
-- Read every lazy-loaded page import declared in `src/AppRouter.tsx`
-- Import the corresponding page module
-- Verify that the expected component export exists
-- Confirm that each routed page module loads without throwing during import
-
-What this pass does not cover:
-
-- Full user interaction flows on each page
-- Live backend data correctness inside every page
-- End-to-end browser behavior across navigation, forms, and mutations
+This report documents the automated tests written for the shared query and hook logic, the errors encountered during validation, and the resolutions applied.
 
 Final validation status:
 
-- `npm run test:run -- src/test/appRouterPages.test.ts`: passed
 - `npm run test:run`: passed
 - `npm run build`: passed
+- `npm run test:coverage`: passed
+
+Page-by-page routed page validation is documented separately in `src/test/PAGE_BY_PAGE_TEST_REPORT.md`.
 
 Current automated result:
 
-- Routed page modules discovered from `src/AppRouter.tsx`: 182
-- Page-by-page smoke tests: 183
-- Full project test files: 4
-- Full project tests: 205
-- Passed: 205
+- Test files: 3
+- Total tests: 22
+- Passed: 22
 - Failed: 0
 
-## Validation Commands And Results
+## Test Infrastructure Added
 
-### 1. Routed page suite
+The following testing support files were added or configured:
 
-Command:
+- `src/test/setup.ts`
+- `src/test/mockSupabase.ts`
+- `vitest.config.ts`
 
-```text
-npm run test:run -- src/test/appRouterPages.test.ts
-```
+Purpose:
 
-Result:
+- `setup.ts`: shared Vitest and DOM setup
+- `mockSupabase.ts`: reusable fluent mock for Supabase query chains and RPC calls
+- `vitest.config.ts`: test environment, setup file registration, and Istanbul coverage provider
 
-- Passed
-- 1 test file
-- 183 tests
-- Duration: 36.86s
+## Test Suites And Test Cases
 
-Meaning:
+### 1. `src/test/supabase.test.ts`
 
-- 1 discovery test confirmed routed pages were found
-- 182 page-specific smoke tests loaded each routed page module and checked its expected export
+Scope: shared query logic in `src/lib/supabase.ts`
 
-### 2. Full automated suite
+Test cases:
 
-Command:
+1. Retries schema-cache responses in `callWithSchemaRefresh`
+   Result: Passed
+   Verified: schema-cache style errors trigger a client reset and one retry
 
-```text
-npm run test:run
-```
+2. Retries thrown relation errors in `withSchemaRefresh`
+   Result: Passed
+   Verified: thrown relation errors trigger retry logic
 
-Result:
+3. Formats duration and applies filters in `videoAPI.getVideos`
+   Result: Passed
+   Verified:
+   - category filter applied
+   - channel filter applied
+   - sort by views applied
+   - pagination range applied
+   - duration normalization applied
 
-- Passed
-- 4 test files
-- 205 tests
-- Duration: 36.73s
+4. Uses the RPC search path when video search is available
+   Result: Passed
+   Verified: `search_videos` RPC receives correct payload
 
-### 3. Production build verification
+5. Falls back to `ilike` queries when video search RPC throws
+   Result: Passed
+   Verified:
+   - fallback `ilike` title query used
+   - fallback description `or(...)` query used
+   - limit and sort preserved
 
-Command:
+6. Tries alternate RPC parameters for recommendations on `PGRST202` errors
+   Result: Passed
+   Verified: alternate RPC signature is attempted after initial schema mismatch
 
-```text
-npm run build
-```
+7. Falls back to category-based database recommendations when RPC calls fail
+   Result: Passed
+   Verified:
+   - category lookup query executed
+   - fallback recommendation query executed
+   - current video excluded
 
-Result:
+8. Returns an existing saved playlist without creating a new one
+   Result: Passed
+   Verified: existing saved playlist reused
 
-- Passed
-- Build completed successfully in 31.92s
-- Non-blocking chunk-size warnings remain
+9. Creates a saved playlist when none exists
+   Result: Passed
+   Verified: insert path creates a new saved playlist
+
+10. Reports an unsaved video when the saved playlist is missing
+    Result: Passed
+    Verified: function safely returns `saved: false`
+
+11. Removes an existing like in `likesAPI.toggleLike`
+    Result: Passed
+    Verified: existing like is deleted and state returns `liked: false`
+
+12. Creates a like when `likesAPI.toggleLike` finds no existing record
+    Result: Passed
+    Verified: new like is inserted and state returns `liked: true`
+
+### 2. `src/test/communityAPI.test.ts`
+
+Scope: community query logic in `src/lib/communityAPI.ts`
+
+Test cases:
+
+1. Creates a room with defaults and auto-joins the creator
+   Result: Passed
+   Verified:
+   - current user is assigned as creator
+   - default `is_public` is applied
+   - default `max_members` is applied
+   - creator is automatically inserted into room membership
+
+2. Rejects room creation for anonymous users
+   Result: Passed
+   Verified: unauthenticated room creation throws expected auth error
+
+3. Returns false early for invalid room ids
+   Result: Passed
+   Verified: invalid IDs do not trigger database requests
+
+4. Returns true when the authenticated user belongs to a room
+   Result: Passed
+   Verified: valid membership returns `true`
+
+5. Treats `PGRST116` room membership lookups as a safe false
+   Result: Passed
+   Verified: "not found" is handled safely without crashing
+
+6. Hydrates usernames and avatars in `messagesAPI.getRoomMessages`
+   Result: Passed
+   Verified:
+   - profile data is merged into messages
+   - username transformation works
+   - avatar value is exposed
+
+7. Applies topic category filters with pagination in `topicsAPI.getTopics`
+   Result: Passed
+   Verified:
+   - category filter applied
+   - range offset and limit applied
+
+8. Calls the community search RPC with the expected payload
+   Result: Passed
+   Verified: `search_community_content` RPC receives correct parameters
+
+### 3. `src/test/useTeamMembers.test.ts`
+
+Scope: realtime and refresh logic in `src/hooks/useTeamMembers.ts`
+
+Test cases:
+
+1. Loads the team members and supports manual refresh
+   Result: Passed
+   Verified:
+   - initial RPC load works
+   - manual refresh replaces members state
+
+2. Reacts to realtime inserts, updates, deletes, and unsubscribes on cleanup
+   Result: Passed
+   Verified:
+   - insert events prepend new members
+   - update events replace matching members
+   - delete events remove matching members
+   - cleanup removes channel subscription
 
 ## Errors Encountered And Resolutions
 
-### Issue 1. Page importer lookup failed in the first routed-page pass
+### Issue 1. Build failure in `AdminUserManagement.tsx`
 
-Error pattern:
-
-```text
-Missing importer for ../pages/...
-```
-
-Root cause:
-
-- `import.meta.glob("../pages/**/*.{tsx,ts,js}")` returned keys with file extensions
-- The route strings extracted from `src/AppRouter.tsx` did not include file extensions
-- The test could not match route module paths to the glob importers
-
-Resolution:
-
-- Updated `src/test/appRouterPages.test.ts`
-- Normalized importer keys by stripping `.tsx`, `.ts`, and `.js` before lookup
-
-Result after fix:
-
-- Routed page importers matched correctly
-- Page-by-page smoke tests could resolve the modules
-
-### Issue 2. Slow page import caused the default test timeout to fail
-
-Error pattern:
+Error:
 
 ```text
-Test timed out
-```
-
-Root cause:
-
-- `./pages/google-meet/AdminMeetings` is significantly heavier to import than the other routed pages
-- The default timeout was too short for the slowest page import during the smoke pass
-
-Resolution:
-
-- Updated `src/test/appRouterPages.test.ts`
-- Set a longer per-page timeout of `120000` milliseconds for routed module smoke checks
-
-Result after fix:
-
-- The slow page completed successfully
-- Latest run imported `./pages/google-meet/AdminMeetings` in about `17073ms`
-
-### Issue 3. Build verification had previously been blocked by a parse error
-
-Error pattern:
-
-```text
+npm run build
+failed because of a parse error in AdminUserManagement.tsx
 ERROR: Unterminated regular expression
 ```
 
 Root cause:
 
-- `src/pages/dashboard/admin/AdminUserManagement.tsx` had mismatched JSX closing tags around the promote-user modal
+- The JSX structure around the promote-user modal had mismatched closing tags.
+- This caused Vite to misread the end of the component and report a parser error.
 
 Resolution:
 
 - Corrected the modal wrapper structure in `src/pages/dashboard/admin/AdminUserManagement.tsx`
+- Removed the extra closing wrapper mismatch
 
 Result after fix:
 
-- `npm run build` now passes during the page-by-page validation pass
+- `npm run build` passed successfully
 
-## Observations
+### Issue 2. Coverage command failed because Vitest defaulted to the wrong provider
 
-- All routed pages declared in `src/AppRouter.tsx` are importable and expose the expected component export
-- No routed page failed module load during the latest smoke pass
-- `./pages/google-meet/AdminMeetings` is currently the slowest routed page import observed in test execution
-- The production build still emits chunk-size warnings, but they are warnings only and do not block release builds
+Error:
 
-## Page-By-Page Results
+```text
+MISSING DEPENDENCY Cannot find dependency '@vitest/coverage-v8'
+```
 
-All pages listed below passed the routed smoke test.
+Root cause:
 
-## Public, Marketing, and Shared Pages (42)
+- Coverage was being run without an explicit provider
+- The project already had Istanbul installed, not the V8 coverage dependency
 
-- `./pages/MotivationPage` -> `default`: Passed
-- `./pages/NotFoundPage` -> `default`: Passed
-- `./pages/LearnMorePWA` -> `default`: Passed
-- `./pages/UpdateModalTestPage` -> `UpdateModalTestPage`: Passed
-- `./pages/AllUploadsPage` -> `default`: Passed
-- `./pages/HomePage` -> `HomePage`: Passed
-- `./pages/LandingPage` -> `LandingPage`: Passed
-- `./pages/ChannelsPage` -> `ChannelsPage`: Passed
-- `./pages/ChannelDetailsPage` -> `ChannelDetailsPage`: Passed
-- `./pages/VideoPlayerPage` -> `VideoPlayerPage`: Passed
-- `./pages/MultiPlatformVideoPage` -> `MultiPlatformVideoPage`: Passed
-- `./pages/CategoryPage` -> `CategoryPage`: Passed
-- `./pages/SearchPage` -> `SearchPage`: Passed
-- `./pages/SubscriptionsPage` -> `SubscriptionsPage`: Passed
-- `./pages/HistoryPage` -> `HistoryPage`: Passed
-- `./pages/LikedVideosPage` -> `LikedVideosPage`: Passed
-- `./pages/TermsPage` -> `TermsPage`: Passed
-- `./pages/PrivacyPage` -> `PrivacyPage`: Passed
-- `./pages/HowItWorksPage` -> `HowItWorksPage`: Passed
-- `./pages/AboutPage` -> `default`: Passed
-- `./pages/CommunityPreviewPage` -> `default`: Passed
-- `./pages/VolunteerPage` -> `default`: Passed
-- `./pages/VolunteerApplicationPage` -> `default`: Passed
-- `./pages/ContactPage` -> `default`: Passed
-- `./pages/HelpCenterPage` -> `default`: Passed
-- `./pages/CommunityGuidelinesPage` -> `default`: Passed
-- `./pages/FeaturesPage` -> `default`: Passed
-- `./pages/PricingPage` -> `default`: Passed
-- `./pages/RewardsPage` -> `RewardsPage`: Passed
-- `./pages/TestimonialsPage` -> `default`: Passed
-- `./pages/NotificationsPage` -> `NotificationsPage`: Passed
-- `./pages/SavedVideosPage` -> `SavedVideosPage`: Passed
-- `./pages/PlaylistsPage` -> `PlaylistsPage`: Passed
-- `./pages/ProfilePage` -> `ProfilePage`: Passed
-- `./pages/creator/CreatorPendingPage` -> `default`: Passed
-- `./pages/CommunityHighlightsPage` -> `CommunityHighlightsPage`: Passed
-- `./pages/SpotlightsPage` -> `SpotlightsPage`: Passed
-- `./pages/CommunityPage` -> `CommunityPage`: Passed
-- `./pages/CreatorsPage` -> `default`: Passed
-- `./pages/CreatorRedirect` -> `default`: Passed
-- `./pages/CreatorLegacyRedirect` -> `default`: Passed
-- `./pages/TeamMemberPage` -> `default`: Passed
+Resolution:
 
-## Authentication Pages (6)
+- Updated `vitest.config.ts`
+- Set:
 
-- `./pages/auth/LoginPage` -> `LoginPage`: Passed
-- `./pages/auth/SignupPage` -> `SignupPage`: Passed
-- `./pages/auth/ForgotPasswordPage` -> `ForgotPasswordPage`: Passed
-- `./pages/auth/ResetPasswordPage` -> `ResetPasswordPage`: Passed
-- `./pages/auth/ConfirmPage` -> `ConfirmPage`: Passed
-- `./pages/auth/AuthCallback` -> `default`: Passed
+```ts
+coverage: {
+  provider: "istanbul",
+}
+```
 
-## User Dashboard Pages (5)
+Result after fix:
 
-- `./pages/dashboard/user/UserDashboard` -> `UserDashboard`: Passed
-- `./pages/dashboard/user/UserVideos` -> `UserVideos`: Passed
-- `./pages/dashboard/user/UserEarnings` -> `UserEarnings`: Passed
-- `./pages/dashboard/user/UserChannels` -> `UserChannels`: Passed
-- `./pages/dashboard/user/UserSettings` -> `UserSettings`: Passed
+- `npm run test:coverage` passed
 
-## Admin Dashboard Pages (37)
+### Issue 3. Vitest startup error in restricted execution environment
 
-- `./pages/dashboard/admin/AdminContentManagementPage` -> `default`: Passed
-- `./pages/dashboard/admin/CreateBlogPostPage` -> `default`: Passed
-- `./pages/dashboard/admin/CreateNewsPostPage` -> `default`: Passed
-- `./pages/dashboard/admin/AdminContentCreatorManagementPage` -> `default`: Passed
-- `./pages/dashboard/admin/AdminDashboard` -> `default`: Passed
-- `./pages/dashboard/admin/AdminContent` -> `AdminContent`: Passed
-- `./pages/dashboard/admin/AdminUpload` -> `AdminUpload`: Passed
-- `./pages/dashboard/admin/AdminRewards` -> `AdminRewards`: Passed
-- `./pages/dashboard/admin/AdminSupport` -> `AdminSupport`: Passed
-- `./pages/dashboard/admin/AdminSync` -> `AdminSync`: Passed
-- `./pages/dashboard/admin/AdminAnalytics` -> `AdminAnalytics`: Passed
-- `./pages/dashboard/admin/AdminSettings` -> `AdminSettings`: Passed
-- `./pages/dashboard/admin/AdminTestimonials` -> `default`: Passed
-- `./pages/dashboard/admin/AdminReports` -> `AdminReports`: Passed
-- `./pages/dashboard/admin/AdminUserManagement` -> `AdminUserManagement`: Passed
-- `./pages/dashboard/admin/AdminModeration` -> `AdminModeration`: Passed
-- `./pages/dashboard/admin/AdminLogs` -> `AdminLogs`: Passed
-- `./pages/dashboard/admin/AdminEdit` -> `AdminEdit`: Passed
-- `./pages/dashboard/admin/AdminView` -> `AdminView`: Passed
-- `./pages/dashboard/admin/AdminProfile` -> `AdminProfile`: Passed
-- `./pages/dashboard/admin/AdminPayoutsPage` -> `default`: Passed
-- `./pages/dashboard/admin/AdminSubadminManagementPage` -> `default`: Passed
-- `./pages/dashboard/admin/AdminTermsPage` -> `AdminTermsPage`: Passed
-- `./pages/dashboard/admin/AdminPrivacyPage` -> `AdminPrivacyPage`: Passed
-- `./pages/dashboard/admin/AdminLeaderboardPage` -> `default`: Passed
-- `./pages/dashboard/admin/AdminContentModerationPage` -> `default`: Passed
-- `./pages/dashboard/admin/AdminVolunteerApplicationsPage` -> `default`: Passed
-- `./pages/dashboard/admin/AdminCreatorMessagesPage` -> `default`: Passed
-- `./pages/dashboard/admin/AdminCreatorAnalyticsPage` -> `default`: Passed
-- `./pages/dashboard/admin/AdminCreatorsPage` -> `default`: Passed
-- `./pages/dashboard/admin/AdminBadgesPage` -> `default`: Passed
-- `./pages/dashboard/admin/AdminAboutPage` -> `default`: Passed
-- `./pages/dashboard/admin/AdminTeamPage` -> `default`: Passed
-- `./pages/dashboard/admin/CreateChannelPage` -> `CreateChannelPage`: Passed
-- `./pages/dashboard/admin/AdminFollowsPage` -> `AdminFollowsPage`: Passed
-- `./pages/dashboard/admin/AdminUserFollowersPage` -> `AdminUserFollowersPage`: Passed
-- `./pages/dashboard/admin/AdminUserFollowingPage` -> `AdminUserFollowingPage`: Passed
+Error:
 
-## Admin Email Pages (1)
+```text
+failed to load config from vitest.config.ts
+Error: spawn EPERM
+```
 
-- `./pages/dashboard/admin/emails/EmailAppRouter` -> `EmailAppRouter`: Passed
+Root cause:
 
-## Superadmin Dashboard Pages (9)
+- The local restricted execution environment blocked the child process spawn used by `esbuild`
 
-- `./pages/dashboard/superadmin/SuperAdminDashboard` -> `SuperAdminDashboard`: Passed
-- `./pages/dashboard/superadmin/SuperAdminUsers` -> `SuperAdminUsers`: Passed
-- `./pages/dashboard/superadmin/SuperAdminRevenue` -> `SuperAdminRevenue`: Passed
-- `./pages/dashboard/superadmin/SuperAdminSettings` -> `SuperAdminSettings`: Passed
-- `./pages/dashboard/superadmin/SuperAdminContent` -> `SuperAdminContent`: Passed
-- `./pages/dashboard/superadmin/SuperAdminAudit` -> `SuperAdminAudit`: Passed
-- `./pages/dashboard/superadmin/SuperAdminMonitoring` -> `SuperAdminMonitoring`: Passed
-- `./pages/dashboard/superadmin/SuperAdminAnalytics` -> `SuperAdminAnalytics`: Passed
-- `./pages/dashboard/superadmin/SuperAdminProfile` -> `SuperAdminProfile`: Passed
+Resolution:
 
-## Creator Dashboard Pages (11)
+- Re-ran the validation command in an allowed execution mode so Vitest and `esbuild` could start properly
 
-- `./pages/dashboard/creator/CreatorDashboardPage` -> `default`: Passed
-- `./pages/dashboard/creator/CreatorContentPage` -> `default`: Passed
-- `./pages/dashboard/creator/CreatorVideosPage` -> `default`: Passed
-- `./pages/dashboard/creator/CreatorRewardsPage` -> `default`: Passed
-- `./pages/dashboard/creator/CreatorAnalyticsPage` -> `default`: Passed
-- `./pages/dashboard/creator/CreatorBadgesPage` -> `default`: Passed
-- `./pages/dashboard/creator/CreatorHighlightsPage` -> `CreatorHighlightsPage`: Passed
-- `./pages/dashboard/creator/CreatorProfilePage` -> `CreatorProfilePage`: Passed
-- `./pages/dashboard/creator/CreatorSettingsPage` -> `CreatorSettingsPage`: Passed
-- `./pages/dashboard/creator/CreatorSync` -> `default`: Passed
-- `./pages/dashboard/creator/CreatorManageVideosPage` -> `default`: Passed
+Result after fix:
 
-## Content Creator Dashboard Pages (6)
+- Test execution completed successfully
 
-- `./pages/dashboard/content_creator/ContentCreatorDashboardPage` -> `default`: Passed
-- `./pages/dashboard/content_creator/ProfilePage` -> `default`: Passed
-- `./pages/dashboard/content_creator/SettingsPage` -> `default`: Passed
-- `./pages/dashboard/content_creator/ContentCreatorContentPage` -> `default`: Passed
-- `./pages/dashboard/content_creator/ContentCreatorVideosPage` -> `default`: Passed
-- `./pages/dashboard/content_creator/ContentCreatorAnalyticsPage` -> `default`: Passed
+## Coverage Notes
 
-## WatchStack Creator Dashboard Pages (6)
+Coverage was run after configuration was corrected.
 
-- `./pages/dashboard/watchstack_creator/WatchStackCreatorDashboardPage` -> `default`: Passed
-- `./pages/dashboard/watchstack_creator/ProfilePage` -> `default`: Passed
-- `./pages/dashboard/watchstack_creator/SettingsPage` -> `default`: Passed
-- `./pages/dashboard/watchstack_creator/AssignmentsPage` -> `default`: Passed
-- `./pages/dashboard/watchstack_creator/PerformancePage` -> `default`: Passed
-- `./pages/dashboard/watchstack_creator/OriginalsPage` -> `default`: Passed
+Reported summary from the targeted testing pass:
 
-## Personalized Creator Dashboard Pages (11)
+- All files: 30.95% statements
+- `src/hooks/useTeamMembers.ts`: 78.57% statements
+- `src/lib/communityAPI.ts`: 17.77% statements
+- `src/lib/supabase.ts`: 24.75% statements
 
-- `./pages/dashboard/personalized_creator/PersonalizedCreatorDashboardPage` -> `PersonalizedCreatorDashboardPage`: Passed
-- `./pages/dashboard/personalized_creator/PersonalizedCreatorContentPage` -> `PersonalizedCreatorContentPage`: Passed
-- `./pages/dashboard/personalized_creator/PersonalizedCreatorAnalyticsPage` -> `PersonalizedCreatorAnalyticsPage`: Passed
-- `./pages/dashboard/personalized_creator/PersonalizedCreatorSocialPage` -> `PersonalizedCreatorSocialPage`: Passed
-- `./pages/dashboard/personalized_creator/PersonalizedCreatorLivePage` -> `PersonalizedCreatorLivePage`: Passed
-- `./pages/dashboard/personalized_creator/PersonalizedCreatorRewardsPage` -> `PersonalizedCreatorRewardsPage`: Passed
-- `./pages/dashboard/personalized_creator/PersonalizedCreatorSupportPage` -> `PersonalizedCreatorSupportPage`: Passed
-- `./pages/dashboard/personalized_creator/PersonalizedCreatorBrandingPage` -> `PersonalizedCreatorBrandingPage`: Passed
-- `./pages/dashboard/personalized_creator/PersonalizedCreatorSettingsPage` -> `PersonalizedCreatorSettingsPage`: Passed
-- `./pages/dashboard/personalized_creator/PersonalizedCreatorYouTubeUploadPage` -> `default`: Passed
-- `./pages/dashboard/personalized_creator/PersonalizedCreatorPublicEditorPage` -> `PersonalizedCreatorPublicEditorPage`: Passed
+Interpretation:
 
-## Subadmin Dashboard Pages (11)
+- Coverage is intentionally focused on the high-value shared query and realtime logic written for this testing pass
+- It does not yet cover every page-level Supabase call across the full application
 
-- `./pages/dashboard/subadmin/SubadminDashboardPage` -> `default`: Passed
-- `./pages/dashboard/subadmin/SubadminUploadsPage` -> `default`: Passed
-- `./pages/dashboard/subadmin/SubadminSupportPage` -> `default`: Passed
-- `./pages/dashboard/subadmin/SubadminCommunityPage` -> `default`: Passed
-- `./pages/dashboard/subadmin/SubadminCommunityPostsPage` -> `default`: Passed
-- `./pages/dashboard/subadmin/SubadminCommunityTopicsPage` -> `default`: Passed
-- `./pages/dashboard/subadmin/SubadminUploadsApprovePage` -> `default`: Passed
-- `./pages/dashboard/subadmin/SubadminUsersPage` -> `default`: Passed
-- `./pages/dashboard/subadmin/SubadminDatabaseInspectorPage` -> `default`: Passed
-- `./pages/dashboard/subadmin/SubadminProfile` -> `SubadminProfile`: Passed
-- `./pages/dashboard/subadmin/SubadminSettings` -> `SubadminSettings`: Passed
+## Files Changed During This Testing Pass
 
-## Studio Pages (6)
+Source and config changes:
 
-- `./pages/studio/WS_Dashboard` -> `default`: Passed
-- `./pages/studio/ExclusiveUploads` -> `default`: Passed
-- `./pages/studio/AssetManager` -> `default`: Passed
-- `./pages/studio/StudioPage` -> `default`: Passed
-- `./pages/studio/StudioHubPage` -> `default`: Passed
-- `./pages/studio/EditMain` -> `default`: Passed
-
-## Ads Pages (2)
-
-- `./pages/ads/CreatorAdsPage` -> `default`: Passed
-- `./pages/ads/AdminAdsManagerPage` -> `AdminAdsManagerPage`: Passed
-
-## Social Pages (6)
-
-- `./pages/social/MessagesPage` -> `default`: Passed
-- `./pages/social/FriendRequestsPage` -> `default`: Passed
-- `./pages/social/UserProfilePage` -> `UserProfilePage`: Passed
-- `./pages/social/CreatorProfilePage` -> `CreatorProfilePage`: Passed
-- `./pages/social/PersonalizedCreatorProfilePage` -> `PersonalizedCreatorProfilePage`: Passed
-- `./pages/social/FollowingFeedPage` -> `FollowingFeedPage`: Passed
-
-## Google Meet Pages (5)
-
-- `./pages/google-meet/AdminMeetings` -> `default`: Passed
-- `./pages/google-meet/CreateMeetingRequest` -> `default`: Passed
-- `./pages/google-meet/MeetingActions` -> `default`: Passed
-- `./pages/google-meet/UpcomingMeetings` -> `default`: Passed
-- `./pages/google-meet/GoogleMeetApp` -> `default`: Passed
-
-## Community Pages (7)
-
-- `./pages/community/RoomsPage` -> `RoomsPage`: Passed
-- `./pages/community/TopicsPage` -> `TopicsPage`: Passed
-- `./pages/community/communityMeetings` -> `default`: Passed
-- `./pages/community/CreateRoomPage` -> `CreateRoomPage`: Passed
-- `./pages/community/CreateTopicPage` -> `CreateTopicPage`: Passed
-- `./pages/community/RoomDetailPage` -> `RoomDetailPage`: Passed
-- `./pages/community/TopicDetailPage` -> `TopicDetailPage`: Passed
-
-## Community Admin Pages (11)
-
-- `./pages/community/admin/CommunityAdminLayout` -> `CommunityAdminLayout`: Passed
-- `./pages/community/admin/CommunityAdminRoomsPage` -> `default`: Passed
-- `./pages/community/admin/CommunityAdminTopicsPage` -> `default`: Passed
-- `./pages/community/admin/CommunityAdminMessagesPage` -> `default`: Passed
-- `./pages/community/admin/CommunityAdminPostsPage` -> `default`: Passed
-- `./pages/community/admin/CommunityAdminMembersPage` -> `default`: Passed
-- `./pages/community/admin/CommunityAdminAnalyticsPage` -> `default`: Passed
-- `./pages/community/admin/CommunityAdminNotificationsPage` -> `default`: Passed
-- `./pages/community/admin/CommunityAdminModerationPage` -> `default`: Passed
-- `./pages/community/admin/CommunityAdminBannedPage` -> `default`: Passed
-- `./pages/community/admin/CommunityAdminSettingsPage` -> `default`: Passed
+- `src/pages/dashboard/admin/AdminUserManagement.tsx`
+- `src/test/setup.ts`
+- `src/test/mockSupabase.ts`
+- `src/test/supabase.test.ts`
+- `src/test/communityAPI.test.ts`
+- `src/test/useTeamMembers.test.ts`
+- `vitest.config.ts`
 
 ## Final Outcome
 
-- Every routed page declared in `src/AppRouter.tsx` passed the page-by-page smoke validation
-- The full automated suite is green at `205/205`
-- The production build passes
-- No routed page currently fails import or expected export validation
+Resolved items:
 
-## Recommended Next Expansion
+- Build parse error fixed
+- Coverage provider configuration fixed
+- Test files consolidated into one folder
+- Shared query logic test coverage added
+- Realtime team member hook coverage added
 
-The best next step after this route-level smoke coverage is page-level behavioral testing for:
+Final state:
 
-1. Authentication interactions such as login, signup, reset, and confirmation flows
-2. Dashboard mutation paths such as admin approvals, bans, edits, and deletions
-3. Pages with heavy network usage or large imports such as `AdminMeetings`
-4. End-to-end navigation across protected routes and role-based redirects
+- Automated tests are passing
+- Build is passing
+- Testing documentation is now stored with the tests in `src/test`
+
+## Recommended Next Testing Expansion
+
+The next best areas for additional automated coverage are:
+
+1. Authentication page flows such as `LoginPage`, `SignupPage`, and password reset flows
+2. Page-level query logic in dashboards that still call Supabase directly
+3. Mutation-heavy admin workflows such as approvals, bans, content edits, and deletions
+4. React Query integration behavior for loading, error, and stale cache states
